@@ -1,42 +1,54 @@
 from flask import Flask, render_template, request, redirect, url_for
-from flask_sqlalchemy import SQLAlchemy
+import sqlite3
 import os
 
 app = Flask(__name__)
 
-# Configuração do Banco de Dados SQLite
-basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'database.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Caminho para o arquivo do banco de dados
+DATABASE = 'database.db'
 
-db = SQLAlchemy(app)
+def get_db_connection():
+    """Cria uma conexão com o banco de dados e retorna o objeto."""
+    conn = sqlite3.connect(DATABASE)
+    # Isso permite acessar as colunas pelo nome (ex: cliente['nome']) em vez de apenas índice
+    conn.row_factory = sqlite3.Row 
+    return conn
 
-# Modelo da Tabela de Clientes
-class Cliente(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    nome = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(100), nullable=False)
+def init_db():
+    """Cria a tabela de clientes caso ela não exista."""
+    conn = get_db_connection()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS clientes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            email TEXT NOT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-# Cria o banco de dados se não existir
-with app.app_context():
-    db.create_all()
+# Inicializa o banco ao rodar o app
+init_db()
 
-# Rota Principal: Lista os clientes
 @app.route('/')
 def index():
-    clientes = Cliente.query.all()
+    conn = get_db_connection()
+    # Busca todos os clientes no banco
+    clientes = conn.execute('SELECT * FROM clientes').fetchall()
+    conn.close()
     return render_template('index.html', clientes=clientes)
 
-# Rota para Cadastrar: Recebe os dados do formulário
 @app.route('/add', methods=['POST'])
 def add_cliente():
     nome = request.form.get('nome')
     email = request.form.get('email')
 
     if nome and email:
-        novo_cliente = Cliente(nome=nome, email=email)
-        db.session.add(novo_cliente)
-        db.session.commit()
+        conn = get_db_connection()
+        # Uso de "?" para prevenir SQL Injection
+        conn.execute('INSERT INTO clientes (nome, email) VALUES (?, ?)', (nome, email))
+        conn.commit()
+        conn.close()
     
     return redirect(url_for('index'))
 
